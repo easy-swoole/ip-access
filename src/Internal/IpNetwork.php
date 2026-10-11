@@ -68,6 +68,31 @@ final class IpNetwork
         return $this->bytes . ':' . bin2hex($this->network) . '/' . $this->prefix;
     }
 
+    public function addressBytes(): int
+    {
+        return $this->bytes;
+    }
+
+    public function prefixLength(): int
+    {
+        return $this->prefix;
+    }
+
+    public function networkKey(): string
+    {
+        return bin2hex($this->network);
+    }
+
+    /**
+     * 按指定前缀计算待检测 IP 的网络地址键。
+     *
+     * 网段索引按前缀分组，因此查询时每个已使用前缀只需要计算一次掩码。
+     */
+    public static function networkKeyFor(string $packedIp, int $prefix): string
+    {
+        return bin2hex(self::applyMask($packedIp, $prefix));
+    }
+
     /** 返回规范化 CIDR，例如 192.168.1.31/24 会格式化为 192.168.1.0/24。 */
     public function format(): string
     {

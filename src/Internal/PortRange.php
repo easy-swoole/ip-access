@@ -63,6 +63,22 @@ final class PortRange
         return $this->start <= $other->end && $other->start <= $this->end;
     }
 
+    /** 相邻区间也可以安全合并，例如 80-90 与 91-100。 */
+    public function canMerge(self $other): bool
+    {
+        return $this->start <= $other->end + 1 && $other->start <= $this->end + 1;
+    }
+
+    public function merge(self $other): self
+    {
+        return new self(min($this->start, $other->start), max($this->end, $other->end));
+    }
+
+    public function start(): int
+    {
+        return $this->start;
+    }
+
     public function format(): string
     {
         return $this->start === $this->end

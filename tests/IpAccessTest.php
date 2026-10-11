@@ -93,4 +93,15 @@ final class IpAccessTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         (new IpAccess())->addBlackIpSegment('192.168.1.0/33');
     }
+
+    public function testSegmentIndexSupportsMultiplePrefixLengths(): void
+    {
+        $access = new IpAccess();
+        $access->addBlackIpSegment('10.0.0.0/8')
+            ->addBlackIpSegment('192.168.1.0/24');
+
+        self::assertFalse($access->isAllowAccess('10.200.1.1'));
+        self::assertFalse($access->isAllowAccess('192.168.1.200'));
+        self::assertTrue($access->isAllowAccess('192.168.2.1'));
+    }
 }

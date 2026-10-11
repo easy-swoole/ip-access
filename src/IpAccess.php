@@ -22,6 +22,12 @@ final class IpAccess
     /** @var array<string, IpNetwork> */
     private array $blackSegments = [];
 
+    /** @var array<int, array<int, array<string, true>>> 按地址字节数、前缀和网络地址建立查询索引 */
+    private array $whiteSegmentIndex = [];
+
+    /** @var array<int, array<int, array<string, true>>> */
+    private array $blackSegmentIndex = [];
+
     public function addWhiteIp(string $ip): self
     {
         $normalized = IpAddress::pack($ip);
@@ -59,6 +65,7 @@ final class IpAccess
         $network = IpNetwork::fromCidr($segment);
         $this->assertNoSegmentConflict($segment, $network, $this->blackSegments, 'blacklist');
         $this->whiteSegments[$network->key()] = $network;
+        $this->indexSegment($this->whiteSegmentIndex, $network);
 
         return $this;
     }
@@ -68,6 +75,7 @@ final class IpAccess
         $network = IpNetwork::fromCidr($segment);
         $this->assertNoSegmentConflict($segment, $network, $this->whiteSegments, 'whitelist');
         $this->blackSegments[$network->key()] = $network;
+        $this->indexSegment($this->blackSegmentIndex, $network);
 
         return $this;
     }
@@ -84,15 +92,11 @@ final class IpAccess
         if (isset($this->blackIps[$key])) {
             return false;
         }
-        foreach ($this->whiteSegments as $network) {
-            if ($network->contains($normalized)) {
-                return true;
-            }
+        if ($this->matchesSegmentIndex($normalized, $this->whiteSegmentIndex)) {
+            return true;
         }
-        foreach ($this->blackSegments as $network) {
-            if ($network->contains($normalized)) {
-                return false;
-            }
+        if ($this->matchesSegmentIndex($normalized, $this->blackSegmentIndex)) {
+            return false;
         }
 
         // 没有命中任何规则时采用默认放行策略。
@@ -116,5 +120,27 @@ final class IpAccess
                 ));
             }
         }
+    }
+
+    /** @param array<int, array<int, array<string, true>>> $index */
+    private function indexSegment(array &$index, IpNetwork $network): void
+    {
+        $index[$network->addressBytes()][$network->prefixLength()][$network->networkKey()] = true;
+    }
+
+    /**
+     * 每个实际使用的前缀只计算一次掩码，再通过哈希键完成网段定位。
+     *
+     * @param array<int, array<int, array<string, true>>> $index
+     */
+    private function matchesSegmentIndex(string $packedIp, array $index): bool
+    {
+        foreach ($index[strlen($packedIp)] ?? [] as $prefix => $networks) {
+            if (isset($networks[IpNetwork::networkKeyFor($packedIp, $prefix)])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -105,4 +105,29 @@ final class IpPortAccessTest extends TestCase
             'reversed range' => [9000, 8000],
         ];
     }
+
+    public function testAdjacentExactPortRangesAreMerged(): void
+    {
+        $access = new IpPortAccess();
+        $access->addIpAllowPort('127.0.0.1', 80, 90)
+            ->addIpAllowPort('127.0.0.1', 91, 100);
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage(
+            'Rule "127.0.0.1:95" conflicts with existing rule "127.0.0.1:80-100" in the IP allow list.'
+        );
+        $access->addIpBlockPort('127.0.0.1', 95);
+    }
+
+    public function testSegmentIndexSupportsMultiplePrefixLengthsAndPorts(): void
+    {
+        $access = new IpPortAccess();
+        $access->addIpSegmentBlockPort('10.0.0.0/8', 80)
+            ->addIpSegmentBlockPort('192.168.1.0/24', 443);
+
+        self::assertFalse($access->isAllowAccess('10.200.1.1', 80));
+        self::assertTrue($access->isAllowAccess('10.200.1.1', 443));
+        self::assertFalse($access->isAllowAccess('192.168.1.200', 443));
+        self::assertTrue($access->isAllowAccess('192.168.2.1', 443));
+    }
 }

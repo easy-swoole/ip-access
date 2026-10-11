@@ -23,6 +23,12 @@ final class IpPortAccess
     /** @var array<int, array{network: IpNetwork, ports: PortRange}> */
     private array $segmentBlockRules = [];
 
+    /** @var array<int, array<int, array<string, array<int, PortRange>>>> */
+    private array $segmentAllowIndex = [];
+
+    /** @var array<int, array<int, array<string, array<int, PortRange>>>> */
+    private array $segmentBlockIndex = [];
+
     public function addIpAllowPort(string $ip, int|string $startPort, int|string|null $endPort = null): self
     {
         return $this->addIpRule($ip, $startPort, $endPort, true);
@@ -56,15 +62,11 @@ final class IpPortAccess
         if ($this->portMatches($normalizedPort, $this->ipBlockRules[$ipKey] ?? [])) {
             return false;
         }
-        foreach ($this->segmentAllowRules as $rule) {
-            if ($rule['network']->contains($normalizedIp) && $rule['ports']->contains($normalizedPort)) {
-                return true;
-            }
+        if ($this->matchesSegmentIndex($normalizedIp, $normalizedPort, $this->segmentAllowIndex)) {
+            return true;
         }
-        foreach ($this->segmentBlockRules as $rule) {
-            if ($rule['network']->contains($normalizedIp) && $rule['ports']->contains($normalizedPort)) {
-                return false;
-            }
+        if ($this->matchesSegmentIndex($normalizedIp, $normalizedPort, $this->segmentBlockIndex)) {
+            return false;
         }
 
         // 当前 IP 和端口没有命中任何规则时默认放行。
@@ -98,9 +100,9 @@ final class IpPortAccess
         }
 
         if ($allow) {
-            $this->ipAllowRules[$key][] = $range;
+            $this->ipAllowRules[$key] = $this->mergePortRanges($this->ipAllowRules[$key] ?? [], $range);
         } else {
-            $this->ipBlockRules[$key][] = $range;
+            $this->ipBlockRules[$key] = $this->mergePortRanges($this->ipBlockRules[$key] ?? [], $range);
         }
 
         return $this;
@@ -133,8 +135,10 @@ final class IpPortAccess
         $rule = ['network' => $network, 'ports' => $range];
         if ($allow) {
             $this->segmentAllowRules[] = $rule;
+            $this->indexSegmentRule($this->segmentAllowIndex, $network, $range);
         } else {
             $this->segmentBlockRules[] = $rule;
+            $this->indexSegmentRule($this->segmentBlockIndex, $network, $range);
         }
 
         return $this;
@@ -145,6 +149,56 @@ final class IpPortAccess
     {
         foreach ($ranges as $range) {
             if ($range->contains($port)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 将相同类型中重叠或相邻的端口闭区间合并，减少检测时的遍历次数。
+     *
+     * @param array<int, PortRange> $ranges
+     * @return array<int, PortRange>
+     */
+    private function mergePortRanges(array $ranges, PortRange $candidate): array
+    {
+        $ranges[] = $candidate;
+        usort($ranges, static fn (PortRange $first, PortRange $second): int => $first->start() <=> $second->start());
+
+        $merged = [];
+        foreach ($ranges as $range) {
+            $lastIndex = count($merged) - 1;
+            if ($lastIndex >= 0 && $merged[$lastIndex]->canMerge($range)) {
+                $merged[$lastIndex] = $merged[$lastIndex]->merge($range);
+            } else {
+                $merged[] = $range;
+            }
+        }
+
+        return $merged;
+    }
+
+    /** @param array<int, array<int, array<string, array<int, PortRange>>>> $index */
+    private function indexSegmentRule(array &$index, IpNetwork $network, PortRange $range): void
+    {
+        $bytes = $network->addressBytes();
+        $prefix = $network->prefixLength();
+        $key = $network->networkKey();
+        $index[$bytes][$prefix][$key] = $this->mergePortRanges($index[$bytes][$prefix][$key] ?? [], $range);
+    }
+
+    /**
+     * 每个已使用前缀只计算一次网络地址，再检查该网段下已经合并的端口区间。
+     *
+     * @param array<int, array<int, array<string, array<int, PortRange>>>> $index
+     */
+    private function matchesSegmentIndex(string $packedIp, int $port, array $index): bool
+    {
+        foreach ($index[strlen($packedIp)] ?? [] as $prefix => $networks) {
+            $networkKey = IpNetwork::networkKeyFor($packedIp, $prefix);
+            if (isset($networks[$networkKey]) && $this->portMatches($port, $networks[$networkKey])) {
                 return true;
             }
         }
