@@ -25,7 +25,22 @@ final class IpAccessTest extends TestCase
         $access = new IpAccess();
         $access->addWhiteIp('127.0.0.1');
         $this->expectException(LogicException::class);
+        $this->expectExceptionMessage(
+            'IP "127.0.0.1" conflicts with existing IP "127.0.0.1" in the whitelist.'
+        );
         $access->addBlackIp('127.0.0.1');
+    }
+
+    public function testIpConflictMessageUsesCanonicalExistingIp(): void
+    {
+        $access = new IpAccess();
+        $access->addBlackIp('2001:db8::1');
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage(
+            'IP "2001:0db8:0:0:0:0:0:1" conflicts with existing IP "2001:db8::1" in the blacklist.'
+        );
+        $access->addWhiteIp('2001:0db8:0:0:0:0:0:1');
     }
 
     public function testOverlappingSegmentsCannotExistInOppositeLists(): void

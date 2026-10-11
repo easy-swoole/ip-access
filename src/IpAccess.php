@@ -20,9 +20,14 @@ final class IpAccess
 
     public function addWhiteIp(string $ip): self
     {
-        $key = bin2hex($this->normalizeIp($ip));
+        $normalized = $this->normalizeIp($ip);
+        $key = bin2hex($normalized);
         if (isset($this->blackIps[$key])) {
-            throw new LogicException(sprintf('IP "%s" already exists in the blacklist.', $ip));
+            throw new LogicException(sprintf(
+                'IP "%s" conflicts with existing IP "%s" in the blacklist.',
+                $ip,
+                inet_ntop($normalized)
+            ));
         }
         $this->whiteIps[$key] = true;
         return $this;
@@ -30,9 +35,14 @@ final class IpAccess
 
     public function addBlackIp(string $ip): self
     {
-        $key = bin2hex($this->normalizeIp($ip));
+        $normalized = $this->normalizeIp($ip);
+        $key = bin2hex($normalized);
         if (isset($this->whiteIps[$key])) {
-            throw new LogicException(sprintf('IP "%s" already exists in the whitelist.', $ip));
+            throw new LogicException(sprintf(
+                'IP "%s" conflicts with existing IP "%s" in the whitelist.',
+                $ip,
+                inet_ntop($normalized)
+            ));
         }
         $this->blackIps[$key] = true;
         return $this;
